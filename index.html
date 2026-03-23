@@ -3667,22 +3667,64 @@ try { window.applyTheme = applyTheme; } catch(e) {}
   function makeCard(code) {
     const d = document.createElement('div');
     d.className = 'sref-card';
-    const firstImage = Array.isArray(code.images) ? code.images[0] : (code.imageUrl || null);
+    // Bilder: images[] Array oder imageUrl string
+    const imgs = Array.isArray(code.images) && code.images.length ? code.images : (code.imageUrl ? [code.imageUrl] : []);
+    const firstImage = imgs[0] || null;
     const category = code.category || '';
+    // Tags: kommagetrennt aus code.tags oder category als Fallback
+    const tagList = (code.tags||'').split(',').map(t=>t.trim()).filter(Boolean);
+    if (category && !tagList.includes(category)) tagList.unshift(category);
+
+    // Kategorie-Farbe
+    const CAT_COLORS = {colors:'#c9a84c',color:'#c9a84c',Allgemein:'#6a8fbd',natur:'#5fa86a',nature:'#5fa86a',portrait:'#b06898',cartoon:'#d4763b'};
+    const catColor = CAT_COLORS[category] || 'var(--muted2)';
+
     d.innerHTML = `
-      <div class="sref-card-thumb">${firstImage
-        ? `<img src="${esc(firstImage)}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='🎨'">`
-        : '🎨'}</div>
+      <div class="sref-card-thumb" style="cursor:pointer;position:relative;">
+        ${firstImage
+          ? `<img src="${esc(firstImage)}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='🎨'" style="width:100%;height:100%;object-fit:cover;display:block;">`
+          : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:2rem;">🎨</div>'}
+        ${imgs.length > 1 ? `<span style="position:absolute;bottom:5px;right:6px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:2px 6px;border-radius:3px;">+${imgs.length-1}</span>` : ''}
+      </div>
       <div class="sref-card-body">
-        <div class="sref-card-code">${esc(code.sref||code.code||'')}</div>
+        <div class="sref-card-code" style="color:${catColor};">${esc(code.sref||code.code||'')}</div>
         <div class="sref-card-name">${esc(code.name||'')}</div>
         ${code.notes?`<div class="sref-card-notes">${esc(code.notes)}</div>`:''}
-        ${category?`<div class="sref-card-tags"><span class="sref-tag">${esc(category)}</span></div>`:''}
+        ${tagList.length?`<div class="sref-card-tags">${tagList.map(t=>`<span class="sref-tag" style="${t===category?'border-color:'+catColor+';color:'+catColor+';':''}">${esc(t)}</span>`).join('')}</div>`:''}
         <div class="sref-card-actions">
           <button class="sref-copy-btn">↗ In MJ kopieren</button>
           <button class="sref-del-btn">✕</button>
         </div>
       </div>`;
+
+    // Bild-Klick: Lightbox mit allen Bildern
+    const thumb = d.querySelector('.sref-card-thumb');
+    if (thumb && imgs.length) {
+      thumb.addEventListener('click', () => {
+        let idx = 0;
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;cursor:pointer;';
+        const updateImg = () => {
+          overlay.innerHTML = `
+            <div style="position:relative;max-width:90vw;max-height:80vh;">
+              <img src="${esc(imgs[idx])}" style="max-width:90vw;max-height:80vh;object-fit:contain;border-radius:6px;" />
+              ${imgs.length>1?`<div style="position:absolute;bottom:-32px;left:50%;transform:translateX(-50%);color:#fff;font-size:13px;">${idx+1} / ${imgs.length}</div>`:''}
+            </div>
+            ${imgs.length>1?`<div style="display:flex;gap:8px;margin-top:8px;">${imgs.map((im,i)=>`<img src="${esc(im)}" data-i="${i}" style="width:52px;height:52px;object-fit:cover;border-radius:4px;cursor:pointer;opacity:${i===idx?1:.5};border:2px solid ${i===idx?'var(--gold)':'transparent'};">`).join('')}</div>`:''}
+            <div style="color:rgba(255,255,255,.4);font-size:12px;margin-top:4px;">Klick zum Schließen · ← → zum Navigieren</div>`;
+          overlay.querySelectorAll('img[data-i]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); idx=+el.dataset.i; updateImg(); }));
+        };
+        updateImg();
+        overlay.addEventListener('click', () => overlay.remove());
+        document.addEventListener('keydown', function handler(e) {
+          if (e.key==='ArrowRight') { idx=(idx+1)%imgs.length; updateImg(); }
+          else if (e.key==='ArrowLeft') { idx=(idx-1+imgs.length)%imgs.length; updateImg(); }
+          else if (e.key==='Escape') { overlay.remove(); document.removeEventListener('keydown',handler); }
+        });
+        document.body.appendChild(overlay);
+      });
+    }
+
     d.querySelector('.sref-copy-btn').addEventListener('click', () => {
       const txt = code.sref||code.code||'';
       navigator.clipboard.writeText(txt).then(()=>toast('✅ Kopiert: '+txt))
