@@ -191,14 +191,70 @@
       border: 1px solid transparent;
     }
     .c-code {
+      position: relative; overflow: hidden;
       background: var(--surface-2); border: 1px solid var(--border);
       border-radius: var(--r-sm); padding: 8px 10px;
       font-family: var(--mono); font-size: .73rem;
       color: var(--cc, var(--text-mid));
       word-break: break-all; line-height: 1.5;
+      min-height: 36px;
     }
+    .c-code-bg {
+      position: absolute; inset: 0;
+      background-size: cover; background-position: center;
+      opacity: .18; border-radius: var(--r-sm);
+      transition: opacity .2s;
+    }
+    .card:hover .c-code-bg { opacity: .28; }
+    .c-code-text { position: relative; z-index: 1; }
+    .c-code[data-imgs] .c-code-text { color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+
+    /* ── Image thumbnails (extra images below code) ── */
+    .c-images { display: flex; gap: 5px; flex-wrap: wrap; }
+    .c-thumb {
+      width: 46px; height: 46px; border-radius: var(--r-sm);
+      object-fit: cover; border: 1px solid var(--border);
+      cursor: zoom-in; transition: opacity .15s, border-color .15s;
+      flex-shrink: 0;
+    }
+    .c-thumb:hover { opacity: .85; border-color: var(--accent); }
     .c-notes { font-size: .73rem; color: var(--text-muted); line-height: 1.55; border-left: 2px solid var(--border); padding-left: 8px; }
     .c-actions { display: flex; gap: 5px; flex-wrap: wrap; margin-top: auto; }
+
+    /* ── Lightbox ── */
+    .lb-overlay {
+      display: none; position: fixed; inset: 0; z-index: 500;
+      background: rgba(0,0,0,.82); backdrop-filter: blur(6px);
+      align-items: center; justify-content: center;
+    }
+    .lb-overlay.open { display: flex; }
+    .lb-wrap { position: relative; max-width: 92vw; max-height: 90vh; }
+    .lb-img {
+      display: block; max-width: 92vw; max-height: 88vh;
+      border-radius: var(--r); box-shadow: 0 24px 80px rgba(0,0,0,.6);
+      object-fit: contain;
+    }
+    .lb-close {
+      position: absolute; top: -14px; right: -14px;
+      width: 30px; height: 30px; border-radius: 50%;
+      background: var(--surface); border: 1px solid var(--border-mid);
+      color: var(--text); font-size: 1rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .1s;
+    }
+    .lb-close:hover { background: var(--surface-3); }
+    .lb-nav {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      width: 32px; height: 32px; border-radius: 50%;
+      background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.15);
+      color: #fff; font-size: 1rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .1s;
+    }
+    .lb-nav:hover { background: rgba(0,0,0,.75); }
+    .lb-prev { left: -42px; }
+    .lb-next { right: -42px; }
+    .lb-counter { position: absolute; bottom: -26px; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: .65rem; color: rgba(255,255,255,.5); white-space: nowrap; }
 
     .empty { grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text-muted); }
     .empty-icon { font-size: 2rem; margin-bottom: 10px; opacity: .2; }
@@ -262,6 +318,10 @@
       </div>
       <div class="field"><label>Kategorie</label><select id="category"></select></div>
       <div class="field"><label>Notizen</label><textarea id="notes" placeholder="Stil, Prompt-Ideen, Look & Feel…"></textarea></div>
+      <div class="field">
+        <label>Bildadressen (URLs, eine pro Zeile)</label>
+        <textarea id="images" placeholder="https://example.com/bild1.jpg&#10;https://example.com/bild2.jpg" style="min-height:52px;font-size:.72rem;"></textarea>
+      </div>
       <button class="btn btn-accent btn-full" id="saveBtn">SREF speichern</button>
       <button class="btn btn-ghost btn-full" id="cancelBtn" style="margin-top:5px;display:none;">Abbrechen</button>
     </div>
@@ -308,6 +368,16 @@
   </main>
 </div>
 
+<div class="lb-overlay" id="lbOverlay">
+  <div class="lb-wrap">
+    <button class="lb-close" id="lbClose">✕</button>
+    <button class="lb-nav lb-prev" id="lbPrev">‹</button>
+    <img class="lb-img" id="lbImg" src="" alt="" />
+    <button class="lb-nav lb-next" id="lbNext">›</button>
+    <div class="lb-counter" id="lbCounter"></div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -339,7 +409,7 @@ function rgba(h,a) { const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),1
 let entries=[],categories=['Allgemein'],editId=null;
 const $=id=>document.getElementById(id);
 const E={
-  name:$('name'),sref:$('sref'),notes:$('notes'),cat:$('category'),
+  name:$('name'),sref:$('sref'),notes:$('notes'),cat:$('category'),images:$('images'),
   newCat:$('newCat'),addCatBtn:$('addCatBtn'),catTags:$('catTags'),
   saveBtn:$('saveBtn'),cancelBtn:$('cancelBtn'),
   si:$('searchInput'),sw:$('sw'),clrBtn:$('clrBtn'),
@@ -373,7 +443,7 @@ onSnapshot(query(cRef,orderBy('name')),snap=>{
 function esc(v){return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
 function norm(v){const c=v.trim();if(!c)return'';return c.startsWith('--sref')?c:`--sref ${c}`;}
 function note(m){E.notice.textContent=m;E.notice.style.display='block';clearTimeout(note._t);note._t=setTimeout(()=>E.notice.style.display='none',2800);}
-function reset(){editId=null;E.name.value='';E.sref.value='';E.notes.value='';E.cat.value=categories[0]??'Allgemein';E.saveBtn.textContent='SREF speichern';E.cancelBtn.style.display='none';}
+function reset(){editId=null;E.name.value='';E.sref.value='';E.notes.value='';E.images.value='';E.cat.value=categories[0]??'Allgemein';E.saveBtn.textContent='SREF speichern';E.cancelBtn.style.display='none';}
 function getF(){
   const q=E.si.value.trim().toLowerCase(),fc=E.fc.value,s=E.ss.value;
   let a=[...entries];
@@ -410,12 +480,18 @@ function render(){
   E.cards.innerHTML=items.map(e=>{
     const col=clr(e.category);
     const date=new Date(e.createdAt).toLocaleDateString('de-DE');
+    const imgs=(e.images||[]).filter(u=>u);
+    const bgStyle=imgs.length?`<div class="c-code-bg" style="background-image:url('${esc(imgs[0])}')"></div>`:'';
+    const extraThumbs=imgs.length>1?`<div class="c-images">${imgs.map((u,i)=>`<img class="c-thumb" src="${esc(u)}" data-imgs="${esc(JSON.stringify(imgs))}" data-idx="${i}" alt="" loading="lazy" />`).join('')}</div>`:'';
+    // clicking the code block opens lightbox on first image if images exist
+    const codeClick=imgs.length?`style="cursor:zoom-in" data-imgs="${esc(JSON.stringify(imgs))}" data-idx="0"`:'';
     return `<article class="card" style="--cc:${col}">
       <div class="c-head">
         <div><div class="c-name">${esc(e.name)}</div><div class="c-date">${date}</div></div>
         <span class="c-badge" style="background:${rgba(col,.1)};border-color:${rgba(col,.25)};color:${col}">${esc(e.category)}</span>
       </div>
-      <div class="c-code">${esc(e.sref)}</div>
+      <div class="c-code" ${codeClick}>${bgStyle}<span class="c-code-text">${esc(e.sref)}</span></div>
+      ${extraThumbs}
       ${e.notes?`<div class="c-notes">${esc(e.notes)}</div>`:''}
       <div class="c-actions">
         <button class="btn" data-copy="${esc(e.sref)}">Kopieren</button>
@@ -433,15 +509,16 @@ async function addCat(){
 }
 async function save(){
   const name=E.name.value.trim(),sref=norm(E.sref.value),cat=E.cat.value,notes=E.notes.value.trim();
+  const images=E.images.value.split('\n').map(u=>u.trim()).filter(u=>u);
   if(!name||!sref){note('Name und SREF-Code erforderlich.');return;}
   setS('syncing','Speichert…');
-  if(editId){await updateDoc(doc(db,'entries',editId),{name,sref,category:cat,notes});note('Aktualisiert.');}
-  else{await addDoc(eRef,{name,sref,category:cat,notes,createdAt:serverTimestamp()});note('Gespeichert.');}
+  if(editId){await updateDoc(doc(db,'entries',editId),{name,sref,category:cat,notes,images});note('Aktualisiert.');}
+  else{await addDoc(eRef,{name,sref,category:cat,notes,images,createdAt:serverTimestamp()});note('Gespeichert.');}
   reset();
 }
 function editE(id){
   const e=entries.find(x=>x.id===id);if(!e)return;
-  editId=id;E.name.value=e.name;E.sref.value=e.sref;E.notes.value=e.notes||'';E.cat.value=e.category;
+  editId=id;E.name.value=e.name;E.sref.value=e.sref;E.notes.value=e.notes||'';E.images.value=(e.images||[]).join('\n');E.cat.value=e.category;
   E.saveBtn.textContent='Änderungen speichern';E.cancelBtn.style.display='';
   E.name.focus();window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -501,9 +578,34 @@ E.cards.addEventListener('click',e=>{
   const cp=e.target.closest('[data-copy]');
   const ed=e.target.closest('[data-edit]');
   const dl=e.target.closest('[data-del]');
+  const th=e.target.closest('.c-thumb');
+  const cc=e.target.closest('.c-code[data-imgs]');
   if(cp)copy(cp.dataset.copy);
   else if(ed)editE(ed.dataset.edit);
   else if(dl)delE(dl.dataset.del);
+  else if(th)openLb(JSON.parse(th.dataset.imgs),+th.dataset.idx);
+  else if(cc)openLb(JSON.parse(cc.dataset.imgs),+cc.dataset.idx);
+});
+
+// ── Lightbox ──
+let lbImgs=[],lbIdx=0;
+const lbOv=$('lbOverlay'),lbImg=$('lbImg'),lbCtr=$('lbCounter');
+function openLb(imgs,idx){lbImgs=imgs;lbIdx=idx;showLb();}
+function showLb(){
+  lbImg.src=lbImgs[lbIdx];
+  lbCtr.textContent=lbImgs.length>1?`${lbIdx+1} / ${lbImgs.length}`:'';
+  lbOv.classList.add('open');
+}
+function closeLb(){lbOv.classList.remove('open');lbImg.src='';}
+$('lbClose').addEventListener('click',closeLb);
+$('lbPrev').addEventListener('click',()=>{lbIdx=(lbIdx-1+lbImgs.length)%lbImgs.length;showLb();});
+$('lbNext').addEventListener('click',()=>{lbIdx=(lbIdx+1)%lbImgs.length;showLb();});
+lbOv.addEventListener('click',e=>{if(e.target===lbOv)closeLb();});
+document.addEventListener('keydown',e=>{
+  if(!lbOv.classList.contains('open'))return;
+  if(e.key==='Escape')closeLb();
+  if(e.key==='ArrowLeft'){lbIdx=(lbIdx-1+lbImgs.length)%lbImgs.length;showLb();}
+  if(e.key==='ArrowRight'){lbIdx=(lbIdx+1)%lbImgs.length;showLb();}
 });
 </script>
 </body>
