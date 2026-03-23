@@ -4097,18 +4097,14 @@ try { window.applyTheme = applyTheme; } catch(e) {}
       if (file.size > 20 * 1024 * 1024) {
         toast('❌ PDF zu groß (max. 20 MB)'); return;
       }
-      const reader = new FileReader();
-      reader.onload = e => {
-        const b64 = e.target.result; // data:application/pdf;base64,...
-        wPdfData = { name: file.name, base64: b64, size: file.size };
-        const nameEl = document.getElementById('wPdfName');
-        const zone   = document.getElementById('wPdfZone');
-        if (nameEl) nameEl.textContent = file.name + ' · ' + fmtSize(file.size);
-        if (zone)   zone.classList.add('has-file');
-        if (!document.getElementById('wTitle').value)
-          document.getElementById('wTitle').value = file.name.replace(/\.pdf$/i,'');
-      };
-      reader.readAsDataURL(file);
+      // Direkt File-Referenz speichern – kein Base64-Umweg nötig
+      wPdfData = { name: file.name, file: file, size: file.size };
+      const nameEl = document.getElementById('wPdfName');
+      const zone   = document.getElementById('wPdfZone');
+      if (nameEl) nameEl.textContent = file.name + ' · ' + fmtSize(file.size);
+      if (zone)   zone.classList.add('has-file');
+      if (!document.getElementById('wTitle').value)
+        document.getElementById('wTitle').value = file.name.replace(/\.pdf$/i,'');
     }
 
     /* ── render grid ── */
@@ -4264,13 +4260,8 @@ try { window.applyTheme = applyTheme; } catch(e) {}
           const { ref, uploadBytes, getDownloadURL } = window.__fbMod;
           const storagePath = `wissen-pdfs/${item.id}_${wPdfData.name}`;
           const storageRef = ref(window.__storage, storagePath);
-          // Base64 → Blob
-          const b64 = wPdfData.base64.split(',')[1];
-          const bytes = atob(b64);
-          const arr = new Uint8Array(bytes.length);
-          for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-          const blob = new Blob([arr], { type: 'application/pdf' });
-          await uploadBytes(storageRef, blob);
+          // Direkt File-Objekt hochladen – schnell, kein Base64-Umweg
+          await uploadBytes(storageRef, wPdfData.file);
           const downloadURL = await getDownloadURL(storageRef);
           item.pdfUrl         = downloadURL;
           item.pdfStoragePath = storagePath;
