@@ -8,7 +8,6 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-    import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
     // ── Firebase-Config ───────────────────────────────────────────────────
     const firebaseConfig = {
@@ -24,8 +23,7 @@
     try {
       const app = initializeApp(firebaseConfig);
       window.__db = getFirestore(app);
-      window.__storage = getStorage(app);
-      window.__fbMod = { collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, serverTimestamp, ref, uploadBytes, getDownloadURL, deleteObject };
+      window.__fbMod = { collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, serverTimestamp };
       window.__fbReady = true;
       document.dispatchEvent(new Event("fbReady"));
     } catch(e) {
@@ -878,7 +876,7 @@
       <span class="shell-card-icon">📚</span>
       <div class="shell-card-title">Wissensbasis</div>
       <div class="shell-card-desc">Tutorials, Texte, Links und Notizen zentral ablegen — durchsuchbar, kategorisiert, immer griffbereit.</div>
-      <div class="shell-card-badge">Lokal · IndexedDB</div>
+      <div class="shell-card-badge">Firebase · Cloud-Sync</div>
     </div>
   </div>
   <div style="position:absolute;top:20px;right:24px;">
@@ -4097,14 +4095,18 @@ try { window.applyTheme = applyTheme; } catch(e) {}
       if (file.size > 20 * 1024 * 1024) {
         toast('❌ PDF zu groß (max. 20 MB)'); return;
       }
-      // Direkt File-Referenz speichern – kein Base64-Umweg nötig
-      wPdfData = { name: file.name, file: file, size: file.size };
-      const nameEl = document.getElementById('wPdfName');
-      const zone   = document.getElementById('wPdfZone');
-      if (nameEl) nameEl.textContent = file.name + ' · ' + fmtSize(file.size);
-      if (zone)   zone.classList.add('has-file');
-      if (!document.getElementById('wTitle').value)
-        document.getElementById('wTitle').value = file.name.replace(/\.pdf$/i,'');
+      const reader = new FileReader();
+      reader.onload = e => {
+        const b64 = e.target.result; // data:application/pdf;base64,...
+        wPdfData = { name: file.name, base64: b64, size: file.size };
+        const nameEl = document.getElementById('wPdfName');
+        const zone   = document.getElementById('wPdfZone');
+        if (nameEl) nameEl.textContent = file.name + ' · ' + fmtSize(file.size);
+        if (zone)   zone.classList.add('has-file');
+        if (!document.getElementById('wTitle').value)
+          document.getElementById('wTitle').value = file.name.replace(/\.pdf$/i,'');
+      };
+      reader.readAsDataURL(file);
     }
 
     /* ── render grid ── */
@@ -4137,13 +4139,12 @@ try { window.applyTheme = applyTheme; } catch(e) {}
       let mediaHTML = '';
       let footerExtra = '';
 
-      if (item.cat === 'pdf' && (item.pdfUrl || item.pdfBase64)) {
-        const pdfSrc = item.pdfUrl || item.pdfBase64;
+      if (item.cat === 'pdf' && item.pdfBase64) {
         mediaHTML = `<div class="wissen-card-media wissen-card-media-collapsed" id="wmedia_${wEsc(item.id)}">
-          <iframe class="wissen-pdf-viewer" src="${wEsc(pdfSrc)}" title="${wEsc(item.title)}"></iframe>
+          <iframe class="wissen-pdf-viewer" src="${wEsc(item.pdfBase64)}" title="${wEsc(item.title)}"></iframe>
         </div>`;
         footerExtra = `<button class="wissen-expand-btn" data-media="${wEsc(item.id)}">▼ PDF öffnen</button>
-          <a class="btn" style="padding:5px 10px;font-size:11px;text-decoration:none;" href="${wEsc(pdfSrc)}" target="_blank" rel="noopener" download="${wEsc(item.pdfFileName||item.title+'.pdf')}">↓ Download</a>`;
+          <a class="btn" style="padding:5px 10px;font-size:11px;text-decoration:none;" href="${wEsc(item.pdfBase64)}" download="${wEsc(item.pdfFileName||item.title+'.pdf')}">↓ Download</a>`;
       } else if (item.cat === 'video') {
         const ytId = getYouTubeId(item.content||'');
         const vmId = getVimeoId(item.content||'');
@@ -4224,13 +4225,6 @@ try { window.applyTheme = applyTheme; } catch(e) {}
       /* ── delete ── */
       d.querySelector('.wissen-del-btn').addEventListener('click', async () => {
         if (!confirm('Eintrag löschen?')) return;
-        // Wenn PDF in Firebase Storage → auch dort löschen
-        if (item.pdfStoragePath && window.__storage) {
-          try {
-            const { ref, deleteObject } = window.__fbMod;
-            await deleteObject(ref(window.__storage, item.pdfStoragePath));
-          } catch(e) { console.warn('Storage-Löschen fehlgeschlagen:', e); }
-        }
         await dbDel(item.id);
         wCache = wCache.filter(x => x.id !== item.id);
         d.remove();
@@ -4254,26 +4248,10 @@ try { window.applyTheme = applyTheme; } catch(e) {}
 
       if (wActiveType === 'pdf') {
         if (!wPdfData) { toast('❌ Bitte PDF auswählen'); return; }
-        // Upload PDF zu Firebase Storage
-        if (st) st.textContent = 'PDF wird hochgeladen…';
-        try {
-          const { ref, uploadBytes, getDownloadURL } = window.__fbMod;
-          const storagePath = `wissen-pdfs/${item.id}_${wPdfData.name}`;
-          const storageRef = ref(window.__storage, storagePath);
-          // Direkt File-Objekt hochladen – schnell, kein Base64-Umweg
-          await uploadBytes(storageRef, wPdfData.file);
-          const downloadURL = await getDownloadURL(storageRef);
-          item.pdfUrl         = downloadURL;
-          item.pdfStoragePath = storagePath;
-          item.pdfFileName    = wPdfData.name;
-          item.pdfSize        = wPdfData.size;
-          item.content        = wPdfData.name; // for search
-        } catch(uploadErr) {
-          console.error(uploadErr);
-          toast('❌ PDF-Upload fehlgeschlagen');
-          if (st) st.textContent = '❌ Upload-Fehler';
-          return;
-        }
+        item.pdfBase64   = wPdfData.base64;
+        item.pdfFileName = wPdfData.name;
+        item.pdfSize     = wPdfData.size;
+        item.content     = wPdfData.name; // for search
       } else if (wActiveType === 'link') {
         const url = (document.getElementById('wLink')?.value||'').trim();
         if (!url) { toast('❌ URL fehlt'); return; }
