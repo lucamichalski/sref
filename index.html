@@ -3967,52 +3967,56 @@ try { window.applyTheme = applyTheme; } catch(e) {}
   renderGrid(cache);
 
   /* ══════════════════════════════════════════════════════
-     WISSENSBASIS — IndexedDB Storage
+     WISSENSBASIS — Firebase Firestore Storage
   ══════════════════════════════════════════════════════ */
   (function() {
-    const DB_NAME = 'prompti-wissen';
-    const STORE   = 'entries';
-    let db = null;
+    const FB_COLLECTION = 'wissen';
     let wCache = [];
     let wCatActive = 'all';
     let wActiveType = 'text';
     let wPdfData = null; // { name, base64, size }
 
-    /* ── IndexedDB ── */
+    /* ── Firebase helpers ── */
+    function getFireMod() {
+      if (!window.__fbReady || !window.__db) throw new Error('Firebase nicht bereit');
+      return window.__fbMod;
+    }
+
     function openDB() {
+      // Warten bis Firebase bereit ist (oder sofort auflösen wenn schon fertig)
       return new Promise((res, rej) => {
-        const req = indexedDB.open(DB_NAME, 2);
-        req.onupgradeneeded = e => {
-          const d = e.target.result;
-          if (!d.objectStoreNames.contains(STORE)) {
-            d.createObjectStore(STORE, { keyPath: 'id' });
-          }
-        };
-        req.onsuccess = e => { db = e.target.result; res(db); };
-        req.onerror   = e => rej(e);
+        if (window.__fbReady) { res(); return; }
+        document.addEventListener('fbReady', () => res(), { once: true });
+        document.addEventListener('fbError', e => rej(e.detail), { once: true });
       });
     }
-    function dbAll() {
-      return new Promise((res, rej) => {
-        const tx = db.transaction(STORE, 'readonly');
-        const req = tx.objectStore(STORE).getAll();
-        req.onsuccess = e => res(e.target.result || []);
-        req.onerror   = e => rej(e);
-      });
+
+    async function dbAll() {
+      const { collection, getDocs, query, orderBy } = getFireMod();
+      try {
+        const q = query(collection(window.__db, FB_COLLECTION), orderBy('createdAt', 'desc'));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      } catch(e) {
+        // Fallback ohne orderBy falls Index fehlt
+        const snap = await getDocs(collection(window.__db, FB_COLLECTION));
+        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+        return items;
+      }
     }
-    function dbPut(item) {
-      return new Promise((res, rej) => {
-        const tx = db.transaction(STORE, 'readwrite');
-        tx.objectStore(STORE).put(item).onsuccess = () => res();
-        tx.onerror = e => rej(e);
-      });
+
+    async function dbPut(item) {
+      const { collection, doc, addDoc } = getFireMod();
+      const { setDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      // Nutze item.id als Dokument-ID wenn vorhanden, sonst neu erstellen
+      const docRef = doc(window.__db, FB_COLLECTION, item.id);
+      await setDoc(docRef, item);
     }
-    function dbDel(id) {
-      return new Promise((res, rej) => {
-        const tx = db.transaction(STORE, 'readwrite');
-        tx.objectStore(STORE).delete(id).onsuccess = () => res();
-        tx.onerror = e => rej(e);
-      });
+
+    async function dbDel(id) {
+      const { deleteDoc, doc } = getFireMod();
+      await deleteDoc(doc(window.__db, FB_COLLECTION, id));
     }
 
     /* ── helpers ── */
