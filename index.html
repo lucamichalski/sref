@@ -1589,6 +1589,11 @@
       </div>
     </div>
 
+    <!-- Kategorie verwalten Button -->
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+      <button id="sfManageCats" style="background:transparent;border:1px solid var(--border-mid);color:var(--muted2);border-radius:var(--r-sm);padding:5px 12px;font-size:11px;font-family:'Geist Mono',monospace;cursor:pointer;letter-spacing:.05em;">⚙ Kategorien verwalten</button>
+    </div>
+
     <!-- Suche -->
     <div class="sref-search-row">
       <input type="text" id="sfSearch" placeholder="Suche nach Name, Code oder Tag…" />
@@ -3660,15 +3665,116 @@ try { window.applyTheme = applyTheme; } catch(e) {}
     const bar = document.getElementById('sfCatFilter');
     if (!bar) return;
     const cats = ['all', ...new Set(cache.map(x=>x.category||'').filter(Boolean).sort())];
-    bar.innerHTML = cats.map(c => `<button class="chip${c===sfActiveCat?' on':''}" data-cat="${esc(c)}" style="font-size:11px;padding:4px 12px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted2);cursor:pointer;font-family:Geist Mono,monospace;">${c==='all'?'Alle':esc(c)}</button>`).join('');
-    bar.querySelectorAll('.chip').forEach(btn => {
+    bar.innerHTML = cats.map(c => {
+      const active = c === sfActiveCat;
+      return `<button class="sf-cat-btn" data-cat="${esc(c)}" style="font-size:11px;padding:4px 12px;border-radius:4px;cursor:pointer;font-family:'Geist Mono',monospace;transition:all .12s;border:1px solid ${active?'var(--border-gold)':'var(--border)'};background:${active?'var(--gold-dim)':'transparent'};color:${active?'var(--gold-light)':'var(--muted2)'};">${c==='all'?'Alle':esc(c)}</button>`;
+    }).join('');
+    bar.querySelectorAll('.sf-cat-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        sfActiveCat = btn.dataset.cat;
-        bar.querySelectorAll('.chip').forEach(b=>b.classList.toggle('on', b.dataset.cat===sfActiveCat));
+        // Toggle: klick auf aktive = zurück zu 'all'
+        sfActiveCat = (btn.dataset.cat === sfActiveCat && btn.dataset.cat !== 'all') ? 'all' : btn.dataset.cat;
+        renderCatFilter();
         renderGrid(cache);
       });
     });
   }
+
+  // ── Kategorie-Manager ──
+  function openCatManager() {
+    const allCats = [...new Set(cache.map(x=>x.category||'').filter(Boolean).sort())];
+    const modal = document.createElement('div');
+    modal.id = 'catManagerModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+    const renderModalContent = () => {
+      const cats = [...new Set(cache.map(x=>x.category||'').filter(Boolean).sort())];
+      modal.innerHTML = `
+        <div style="background:var(--panel);border:1px solid var(--border-gold);border-radius:10px;padding:28px;min-width:360px;max-width:480px;width:100%;display:flex;flex-direction:column;gap:16px;max-height:80vh;overflow-y:auto;">
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--gold);letter-spacing:.1em;text-transform:uppercase;">Kategorien verwalten</div>
+          <div id="catList" style="display:flex;flex-direction:column;gap:8px;">
+            ${cats.map(c => `
+              <div style="display:flex;align-items:center;gap:8px;" data-cat="${esc(c)}">
+                <span style="flex:1;font-size:13px;color:var(--text);font-family:'Geist',sans-serif;" class="cat-label">${esc(c)}</span>
+                <span style="font-size:11px;color:var(--muted);font-family:'Geist Mono',monospace;">${cache.filter(x=>(x.category||'')===c).length}×</span>
+                <button class="cat-rename-btn" data-cat="${esc(c)}" style="background:transparent;border:1px solid var(--border-mid);color:var(--muted2);border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;">✎ Umbenennen</button>
+                <button class="cat-del-btn" data-cat="${esc(c)}" style="background:transparent;border:1px solid rgba(210,80,60,.2);color:rgba(210,100,80,.75);border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;">✕</button>
+              </div>`).join('')}
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;gap:8px;">
+            <input id="newCatInput" placeholder="Neue Kategorie…" style="flex:1;background:var(--panel2);border:1px solid var(--border-mid);border-radius:5px;padding:7px 10px;color:var(--text);font-size:13px;font-family:'Geist',sans-serif;">
+            <button id="newCatAdd" style="background:var(--gold);border:1px solid var(--gold);color:#111;border-radius:5px;padding:7px 14px;font-weight:600;font-size:12px;cursor:pointer;font-family:'Geist',sans-serif;">+ Hinzufügen</button>
+          </div>
+          <button id="catManagerClose" style="background:transparent;border:1px solid var(--border-mid);color:var(--muted2);border-radius:5px;padding:8px;cursor:pointer;font-family:'Geist',sans-serif;font-size:13px;">Schließen</button>
+        </div>`;
+
+      modal.querySelector('#catManagerClose').addEventListener('click', () => { modal.remove(); renderCatFilter(); });
+
+      // New category
+      modal.querySelector('#newCatAdd').addEventListener('click', () => {
+        const val = modal.querySelector('#newCatInput').value.trim();
+        if (!val) return;
+        // just adds to filter; user assigns via edit on cards
+        toast('✅ Kategorie "'+val+'" kann jetzt beim Bearbeiten von Einträgen gewählt werden');
+        // Inject into a dummy so it shows in filter
+        // We actually store a placeholder in cache temporarily for the UI
+        if (!cache.find(x=>x.category===val)) {
+          cache.push({id:'__placeholder_'+val, name:'', sref:'', category:val, images:[], notes:'', __placeholder:true});
+        }
+        modal.remove();
+        renderCatFilter();
+      });
+
+      // Rename
+      modal.querySelectorAll('.cat-rename-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const oldCat = btn.dataset.cat;
+          const newCat = prompt('Kategorie umbenennen:', oldCat);
+          if (!newCat || newCat === oldCat) return;
+          // Update all entries in cache
+          const toUpdate = cache.filter(x=>(x.category||'')===oldCat && !x.__placeholder);
+          cache.forEach(x=>{ if((x.category||'')===oldCat) x.category=newCat; });
+          // Update in Firestore
+          if (window.__fbReady && window.__db) {
+            const {doc} = window.__fbMod;
+            const {updateDoc} = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+            for (const item of toUpdate) {
+              try { await updateDoc(doc(window.__db,'entries',item.id), {category:newCat}); } catch(e){console.error(e);}
+            }
+          }
+          toast('✅ '+toUpdate.length+' Einträge umbenannt');
+          renderModalContent();
+          renderGrid(cache);
+        });
+      });
+
+      // Delete category (unassign from entries)
+      modal.querySelectorAll('.cat-del-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const cat = btn.dataset.cat;
+          const count = cache.filter(x=>(x.category||'')===cat && !x.__placeholder).length;
+          if (!confirm('Kategorie "'+cat+'" löschen? Die '+count+' Einträge werden auf "Allgemein" gesetzt.')) return;
+          const toUpdate = cache.filter(x=>(x.category||'')===cat && !x.__placeholder);
+          cache.forEach(x=>{ if((x.category||'')===cat) x.category='Allgemein'; });
+          cache = cache.filter(x=>!x.__placeholder || x.category!==cat);
+          if (window.__fbReady && window.__db) {
+            const {doc} = window.__fbMod;
+            const {updateDoc} = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+            for (const item of toUpdate) {
+              try { await updateDoc(doc(window.__db,'entries',item.id), {category:'Allgemein'}); } catch(e){console.error(e);}
+            }
+          }
+          toast('✅ Kategorie gelöscht');
+          renderModalContent();
+          renderGrid(cache);
+        });
+      });
+    };
+
+    renderModalContent();
+    document.body.appendChild(modal);
+  }
+
+  document.getElementById('sfManageCats')?.addEventListener('click', openCatManager);
 
   function renderGrid(codes) {
     const grid = document.getElementById('sfGrid');
