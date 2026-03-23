@@ -3566,17 +3566,22 @@ try { window.applyTheme = applyTheme; } catch(e) {}
     if (p) p.className = 'fb-pill ' + state;
     if (t) t.textContent = txt;
   }
-  document.addEventListener('fbReady', () => setPill('ok',  'Firebase verbunden'));
-  document.addEventListener('fbError', () => {
-    setPill('err', 'Lokaler Modus');
-    const n = document.getElementById('fbNote'); if (n) n.style.display = 'block';
-  });
-  setTimeout(() => {
-    if (!window.__fbReady) {
+  // Falls fbReady bereits gefeuert wurde bevor dieser Block lief (Race Condition Fix)
+  if (window.__fbReady) {
+    setPill('ok', 'Firebase verbunden');
+  } else {
+    document.addEventListener('fbReady', () => setPill('ok', 'Firebase verbunden'));
+    document.addEventListener('fbError', () => {
       setPill('err', 'Lokaler Modus');
       const n = document.getElementById('fbNote'); if (n) n.style.display = 'block';
-    }
-  }, 5000);
+    });
+    setTimeout(() => {
+      if (!window.__fbReady) {
+        setPill('err', 'Lokaler Modus');
+        const n = document.getElementById('fbNote'); if (n) n.style.display = 'block';
+      }
+    }, 5000);
+  }
 
   /* ── sref local storage ── */
   function getLocal() {
