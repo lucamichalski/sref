@@ -1595,6 +1595,9 @@
       <span class="sref-count-badge" id="sfCount"></span>
     </div>
 
+    <!-- Kategorie-Filter -->
+    <div id="sfCatFilter" style="display:flex;flex-wrap:wrap;gap:6px;padding:0 0 12px 0;"></div>
+
     <!-- Grid -->
     <div class="sref-grid" id="sfGrid">
       <div class="sref-empty">Bereit — füge deinen ersten sref Code hinzu ↑</div>
@@ -3616,9 +3619,10 @@ try { window.applyTheme = applyTheme; } catch(e) {}
       const rIds   = new Set(remote.map(x=>x.id));
       cache = [...remote, ...local.filter(x=>x.id.startsWith('local_')&&!rIds.has(x.id))];
       renderGrid(cache);
+      renderCatFilter();
     } catch(err) {
       console.error(err); setPill('err','Ladefehler');
-      cache = getLocal(); renderGrid(cache);
+      cache = getLocal(); renderGrid(cache); renderCatFilter();
     }
   }
   window.loadSrefCodes = loadSrefCodes;
@@ -3650,12 +3654,29 @@ try { window.applyTheme = applyTheme; } catch(e) {}
   function esc(s) {
     return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+  let sfActiveCat = 'all';
+
+  function renderCatFilter() {
+    const bar = document.getElementById('sfCatFilter');
+    if (!bar) return;
+    const cats = ['all', ...new Set(cache.map(x=>x.category||'').filter(Boolean).sort())];
+    bar.innerHTML = cats.map(c => `<button class="chip${c===sfActiveCat?' on':''}" data-cat="${esc(c)}" style="font-size:11px;padding:4px 12px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted2);cursor:pointer;font-family:Geist Mono,monospace;">${c==='all'?'Alle':esc(c)}</button>`).join('');
+    bar.querySelectorAll('.chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        sfActiveCat = btn.dataset.cat;
+        bar.querySelectorAll('.chip').forEach(b=>b.classList.toggle('on', b.dataset.cat===sfActiveCat));
+        renderGrid(cache);
+      });
+    });
+  }
+
   function renderGrid(codes) {
     const grid = document.getElementById('sfGrid');
     const cnt  = document.getElementById('sfCount');
     if (!grid) return;
     const q = (document.getElementById('sfSearch')?.value||'').toLowerCase();
-    const f = q ? codes.filter(x=>(x.name+x.sref+(x.category||'')+x.notes).toLowerCase().includes(q)) : codes;
+    let f = sfActiveCat && sfActiveCat !== 'all' ? codes.filter(x=>(x.category||'')===sfActiveCat) : codes;
+    f = q ? f.filter(x=>(x.name+x.sref+(x.category||'')+x.notes).toLowerCase().includes(q)) : f;
     if (cnt) cnt.textContent = f.length + ' Code' + (f.length!==1?'s':'');
     if (!f.length) {
       grid.innerHTML = `<div class="sref-empty">${codes.length?'Keine Treffer für "'+esc(q)+'"':'↑ Füge deinen ersten sref Code hinzu'}</div>`;
@@ -3680,11 +3701,11 @@ try { window.applyTheme = applyTheme; } catch(e) {}
     const catColor = CAT_COLORS[category] || 'var(--muted2)';
 
     d.innerHTML = `
-      <div class="sref-card-thumb" style="cursor:pointer;position:relative;">
+      <div class="sref-card-thumb" style="cursor:pointer;position:relative;overflow:hidden;">
         ${firstImage
           ? `<img src="${esc(firstImage)}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='🎨'" style="width:100%;height:100%;object-fit:cover;display:block;">`
           : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:2rem;">🎨</div>'}
-        ${imgs.length > 1 ? `<span style="position:absolute;bottom:5px;right:6px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:2px 6px;border-radius:3px;">+${imgs.length-1}</span>` : ''}
+        ${imgs.length > 1 ? `<span style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;pointer-events:none;">${imgs.length}✕</span>` : ''}
       </div>
       <div class="sref-card-body">
         <div class="sref-card-code" style="color:${catColor};">${esc(code.sref||code.code||'')}</div>
@@ -3692,7 +3713,8 @@ try { window.applyTheme = applyTheme; } catch(e) {}
         ${code.notes?`<div class="sref-card-notes">${esc(code.notes)}</div>`:''}
         ${tagList.length?`<div class="sref-card-tags">${tagList.map(t=>`<span class="sref-tag" style="${t===category?'border-color:'+catColor+';color:'+catColor+';':''}">${esc(t)}</span>`).join('')}</div>`:''}
         <div class="sref-card-actions">
-          <button class="sref-copy-btn">↗ In MJ kopieren</button>
+          <button class="sref-copy-btn">↗ Kopieren</button>
+          <button class="sref-edit-btn" style="background:transparent;border:1px solid var(--border-mid);color:var(--muted2);border-radius:var(--r-sm);padding:7px 10px;font-size:12px;cursor:pointer;font-family:Geist,sans-serif;">✎</button>
           <button class="sref-del-btn">✕</button>
         </div>
       </div>`;
@@ -3735,8 +3757,73 @@ try { window.applyTheme = applyTheme; } catch(e) {}
       await delCode(code.id);
       cache = cache.filter(x=>x.id!==code.id);
       d.remove();
+      renderCatFilter();
       toast('✅ Gelöscht');
     });
+
+    d.querySelector('.sref-edit-btn').addEventListener('click', () => {
+      // Inline-Edit Modal
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+      const allCats = [...new Set(cache.map(x=>x.category||'').filter(Boolean))];
+      modal.innerHTML = `
+        <div style="background:var(--panel);border:1px solid var(--border-gold);border-radius:10px;padding:28px;min-width:340px;max-width:500px;width:100%;display:flex;flex-direction:column;gap:14px;">
+          <div style="font-family:Geist Mono,monospace;font-size:11px;color:var(--gold);letter-spacing:.1em;text-transform:uppercase;">Eintrag bearbeiten</div>
+          <label style="font-size:12px;color:var(--muted2);">Name
+            <input id="editName" value="${esc(code.name||'')}" style="display:block;width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border-mid);border-radius:5px;padding:8px 10px;color:var(--text);font-size:13px;font-family:Geist,sans-serif;">
+          </label>
+          <label style="font-size:12px;color:var(--muted2);">Sref-Code
+            <input id="editSref" value="${esc(code.sref||code.code||'')}" style="display:block;width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border-mid);border-radius:5px;padding:8px 10px;color:var(--text);font-size:13px;font-family:Geist Mono,monospace;">
+          </label>
+          <label style="font-size:12px;color:var(--muted2);">Kategorie
+            <select id="editCat" style="display:block;width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border-mid);border-radius:5px;padding:8px 10px;color:var(--text);font-size:13px;font-family:Geist,sans-serif;">
+              ${allCats.map(c=>`<option value="${esc(c)}" ${c===category?'selected':''}>${esc(c)}</option>`).join('')}
+              <option value="__new__">+ Neue Kategorie…</option>
+            </select>
+          </label>
+          <input id="editNewCat" placeholder="Neue Kategorie eingeben…" style="display:none;background:var(--panel2);border:1px solid var(--border-gold);border-radius:5px;padding:8px 10px;color:var(--text);font-size:13px;font-family:Geist,sans-serif;">
+          <label style="font-size:12px;color:var(--muted2);">Notizen
+            <textarea id="editNotes" rows="3" style="display:block;width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border-mid);border-radius:5px;padding:8px 10px;color:var(--text);font-size:13px;font-family:Geist,sans-serif;resize:vertical;">${esc(code.notes||'')}</textarea>
+          </label>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button id="editCancel" style="background:transparent;border:1px solid var(--border-mid);color:var(--muted2);border-radius:5px;padding:8px 16px;cursor:pointer;font-family:Geist,sans-serif;">Abbrechen</button>
+            <button id="editSave" style="background:var(--gold);border:1px solid var(--gold);color:#111;border-radius:5px;padding:8px 16px;font-weight:600;cursor:pointer;font-family:Geist,sans-serif;">Speichern</button>
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+      const catSel = modal.querySelector('#editCat');
+      const newCatIn = modal.querySelector('#editNewCat');
+      catSel.addEventListener('change', () => {
+        newCatIn.style.display = catSel.value === '__new__' ? 'block' : 'none';
+      });
+      modal.querySelector('#editCancel').addEventListener('click', () => modal.remove());
+      modal.querySelector('#editSave').addEventListener('click', async () => {
+        const newName  = modal.querySelector('#editName').value.trim();
+        const newSref  = modal.querySelector('#editSref').value.trim();
+        let   newCat   = catSel.value === '__new__' ? newCatIn.value.trim() : catSel.value;
+        const newNotes = modal.querySelector('#editNotes').value.trim();
+        if (!newName) { toast('❌ Name fehlt'); return; }
+        // Update in cache
+        const idx = cache.findIndex(x=>x.id===code.id);
+        if (idx>-1) {
+          cache[idx] = {...cache[idx], name:newName, sref:newSref, category:newCat, notes:newNotes};
+          code.name=newName; code.sref=newSref; code.category=newCat; code.notes=newNotes;
+        }
+        // Update in Firestore
+        if (window.__fbReady && window.__db && !code.id.startsWith('local_')) {
+          try {
+            const {doc} = window.__fbMod;
+            const {updateDoc} = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+            await updateDoc(doc(window.__db,'entries',code.id), {name:newName, sref:newSref, category:newCat, notes:newNotes});
+          } catch(e) { console.error(e); toast('⚠️ Lokal gespeichert'); }
+        }
+        modal.remove();
+        renderGrid(cache);
+        renderCatFilter();
+        toast('✅ Gespeichert');
+      });
+    });
+
     return d;
   }
 
