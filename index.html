@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SREF Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:         #f5f4f0;
+      --surface:    #ffffff;
+      --surface-2:  #f0efeb;
+      --surface-3:  #e8e7e2;
+      --border:     #dddbd4;
+      --border-mid: #c8c6be;
+      --text:       #1a1916;
+      --text-mid:   #5a5852;
+      --text-muted: #9a9890;
+      --accent:     #c8a84b;
+      --accent-fg:  #fff;
+      --danger:     #c0392b;
+      --r-xs: 4px; --r-sm: 6px; --r: 10px;
+      --mono: 'DM Mono', monospace;
+      --serif: 'Instrument Serif', Georgia, serif;
+      --sans: 'Inter', system-ui, sans-serif;
+    }
+    [data-theme="dark"] {
+      --bg:         #111110;
+      --surface:    #1a1916;
+      --surface-2:  #222220;
+      --surface-3:  #2c2c29;
+      --border:     #2e2e2b;
+      --border-mid: #3e3e3a;
+      --text:       #e8e6df;
+      --text-mid:   #a8a69e;
+      --text-muted: #666460;
+      --accent-fg:  #111;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--sans); font-size: 13px; background: var(--bg); color: var(--text); min-height: 100vh; transition: background .2s, color .2s; }
+
+    /* ── Topbar ── */
+    .topbar {
+      position: sticky; top: 0; z-index: 200;
+      height: 50px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 22px; gap: 14px;
+    }
+    .topbar-l { display: flex; align-items: baseline; gap: 9px; }
+    .wordmark { font-family: var(--serif); font-style: italic; font-size: 1.2rem; color: var(--text); }
+    .pill {
+      font-family: var(--mono); font-size: .6rem; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--text-muted);
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 999px; padding: 2px 7px;
+    }
+    .topbar-r { display: flex; align-items: center; gap: 7px; }
+    .status { display: flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: .67rem; color: var(--text-muted); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
+    .dot.syncing { background: #f59e0b; animation: blink 1s infinite; }
+    .dot.error   { background: var(--danger); }
+    .dot.offline { background: var(--text-muted); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .theme-wrap { display: flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
+    .theme-lbl { font-family: var(--mono); font-size: .62rem; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+    .toggle {
+      width: 30px; height: 17px; background: var(--surface-3);
+      border: 1px solid var(--border-mid); border-radius: 999px; position: relative; transition: background .2s;
+    }
+    .toggle::after {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 11px; height: 11px; border-radius: 50%;
+      background: var(--text-muted); transition: transform .2s, background .2s;
+    }
+    [data-theme="dark"] .toggle { background: #3a3a36; }
+    [data-theme="dark"] .toggle::after { transform: translateX(13px); background: var(--accent); }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      border: 1px solid var(--border); border-radius: var(--r-sm);
+      padding: 5px 11px; font: inherit; font-size: .74rem; font-weight: 500;
+      cursor: pointer; background: var(--surface); color: var(--text-mid);
+      transition: background .1s, border-color .1s, color .1s; white-space: nowrap;
+    }
+    .btn:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-mid); }
+    .btn-accent { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+    .btn-accent:hover { filter: brightness(1.07); color: var(--accent-fg); }
+    .btn-ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
+    .btn-ghost:hover { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+    .btn-danger { background: transparent; color: var(--danger); border-color: transparent; }
+    .btn-danger:hover { background: rgba(192,57,43,.07); border-color: rgba(192,57,43,.2); }
+    .btn-full { width: 100%; justify-content: center; padding: 8px; }
+
+    /* ── Layout ── */
+    .layout { display: grid; grid-template-columns: 276px 1fr; height: calc(100vh - 50px); }
+
+    /* ── Sidebar ── */
+    .sidebar { border-right: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
+    .sidebar::-webkit-scrollbar { width: 3px; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 3px; }
+    .s-block { padding: 15px 16px; border-bottom: 1px solid var(--border); }
+    .s-block:last-child { border-bottom: none; }
+    .s-title {
+      font-family: var(--mono); font-size: .59rem; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--text-muted);
+      display: flex; align-items: center; gap: 7px; margin-bottom: 11px;
+    }
+    .s-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* ── Form ── */
+    .field { margin-bottom: 9px; }
+    .field:last-child { margin-bottom: 0; }
+    .field label { display: block; font-size: .69rem; color: var(--text-muted); font-weight: 500; margin-bottom: 3px; }
+    input[type="text"], textarea, select {
+      width: 100%; font: inherit; font-size: .82rem;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--r-sm); color: var(--text); padding: 7px 9px;
+      outline: none; -webkit-appearance: none; transition: border-color .15s;
+    }
+    input[type="text"]:focus, textarea:focus, select:focus { border-color: var(--accent); background: var(--surface); }
+    textarea { resize: vertical; min-height: 60px; line-height: 1.5; }
+    select {
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%239a9890' d='M5 7L1 3h8z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px;
+    }
+    .helper { margin-top: 3px; font-family: var(--mono); font-size: .65rem; color: var(--text-muted); }
+    .f-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: end; }
+    .notice {
+      display: none; font-family: var(--mono); font-size: .72rem;
+      padding: 7px 9px; border-radius: var(--r-sm);
+      border: 1px solid var(--border); background: var(--surface-2);
+      color: var(--text-mid); margin-bottom: 9px;
+    }
+    .cat-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+    .cat-tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px; border-radius: var(--r-xs);
+      font-size: .69rem; font-weight: 500; border: 1px solid transparent;
+    }
+    .cat-tag .rm { background: none; border: none; padding: 0; color: inherit; opacity: .4; cursor: pointer; font-size: .8rem; transition: opacity .1s; }
+    .cat-tag .rm:hover { opacity: 1; }
+
+    /* ── Main ── */
+    .main { display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+    .searchbar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 9px 18px; display: flex; gap: 7px; align-items: center; flex-wrap: wrap;
+    }
+    .sw { position: relative; flex: 1; min-width: 150px; }
+    .sw svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+    .sw input { padding-left: 29px; }
+    .sw .clr { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); padding: 0; cursor: pointer; font-size: .8rem; display: none; }
+    .sw.hv .clr { display: block; }
+    .sw.hv input { padding-right: 24px; }
+
+    .statsbar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 5px 18px; display: flex; gap: 14px; align-items: center;
+    }
+    .stat { display: flex; align-items: baseline; gap: 4px; font-family: var(--mono); font-size: .67rem; color: var(--text-muted); }
+    .stat strong { font-size: .8rem; color: var(--text); font-weight: 500; }
+    .sep { width: 1px; height: 10px; background: var(--border); }
+
+    .cards-area { flex: 1; overflow-y: auto; padding: 15px 18px; }
+    .cards-area::-webkit-scrollbar { width: 4px; }
+    .cards-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 9px; align-content: start; }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 13px;
+      display: flex; flex-direction: column; gap: 9px;
+      transition: border-color .15s;
+      border-left: 3px solid var(--cc, var(--border-mid));
+    }
+    .card:hover { border-color: var(--border-mid); border-left-color: var(--cc, var(--border-mid)); }
+    .c-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .c-name { font-family: var(--serif); font-style: italic; font-size: .95rem; color: var(--text); line-height: 1.3; }
+    .c-date { font-family: var(--mono); font-size: .62rem; color: var(--text-muted); margin-top: 1px; }
+    .c-badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 7px; border-radius: var(--r-xs);
+      font-size: .62rem; font-weight: 600; letter-spacing: .04em;
+      text-transform: uppercase; white-space: nowrap; flex-shrink: 0;
+      border: 1px solid transparent;
+    }
+    .c-code {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--r-sm); padding: 8px 10px;
+      font-family: var(--mono); font-size: .73rem;
+      color: var(--cc, var(--text-mid));
+      word-break: break-all; line-height: 1.5;
+    }
+    .c-notes { font-size: .73rem; color: var(--text-muted); line-height: 1.55; border-left: 2px solid var(--border); padding-left: 8px; }
+    .c-actions { display: flex; gap: 5px; flex-wrap: wrap; margin-top: auto; }
+
+    .empty { grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text-muted); }
+    .empty-icon { font-size: 2rem; margin-bottom: 10px; opacity: .2; }
+    .empty h3 { font-family: var(--serif); font-style: italic; font-size: 1.05rem; color: var(--text-mid); margin-bottom: 4px; }
+    .empty p { font-size: .75rem; }
+
+    .loader {
+      position: fixed; inset: 0; background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px; z-index: 999; transition: opacity .3s;
+    }
+    .loader.gone { opacity: 0; pointer-events: none; }
+    .spinner { width: 22px; height: 22px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loader-txt { font-family: var(--mono); font-size: .68rem; color: var(--text-muted); }
+
+    @media (max-width: 840px) {
+      .layout { grid-template-columns: 1fr; height: auto; min-height: calc(100vh - 50px); }
+      .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+
+<div class="loader" id="loader">
+  <div class="spinner"></div>
+  <div class="loader-txt">Verbinde mit Firebase…</div>
+</div>
+
+<header class="topbar">
+  <div class="topbar-l">
+    <span class="wordmark">SREF Manager</span>
+    <span class="pill">Midjourney · v2</span>
+  </div>
+  <div class="topbar-r">
+    <div class="status">
+      <div class="dot offline" id="dot"></div>
+      <span id="stxt">Verbinde…</span>
+    </div>
+    <button class="btn" id="exportBtn">↓ Exportieren</button>
+    <label class="btn" style="cursor:pointer;">↑ Importieren<input id="importInput" type="file" accept="application/json" hidden></label>
+    <button class="btn btn-danger" id="resetBtn">Löschen</button>
+    <div class="theme-wrap" id="themeWrap">
+      <span class="theme-lbl">Dark</span>
+      <div class="toggle"></div>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+
+    <div class="s-block">
+      <div class="s-title">SREF anlegen</div>
+      <div class="notice" id="notice"></div>
+      <div class="field"><label>Name / Titel</label><input id="name" type="text" placeholder="z. B. Moody Editorial Fashion" /></div>
+      <div class="field">
+        <label>SREF-Code</label>
+        <input id="sref" type="text" placeholder="--sref 123456789" />
+        <div class="helper">mit oder ohne --sref eingeben</div>
+      </div>
+      <div class="field"><label>Kategorie</label><select id="category"></select></div>
+      <div class="field"><label>Notizen</label><textarea id="notes" placeholder="Stil, Prompt-Ideen, Look & Feel…"></textarea></div>
+      <button class="btn btn-accent btn-full" id="saveBtn">SREF speichern</button>
+      <button class="btn btn-ghost btn-full" id="cancelBtn" style="margin-top:5px;display:none;">Abbrechen</button>
+    </div>
+
+    <div class="s-block">
+      <div class="s-title">Neue Kategorie</div>
+      <div class="f-row">
+        <input id="newCat" type="text" placeholder="z. B. Fashion, Sci-Fi…" />
+        <button class="btn btn-accent" id="addCatBtn" style="padding:6px 13px;font-size:1rem;">+</button>
+      </div>
+    </div>
+
+    <div class="s-block">
+      <div class="s-title">Kategorien</div>
+      <div class="cat-tags" id="catTags"></div>
+    </div>
+
+  </aside>
+
+  <main class="main">
+    <div class="searchbar">
+      <div class="sw" id="sw">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="searchInput" type="text" placeholder="Name, Code, Kategorie, Notiz durchsuchen…" />
+        <button class="clr" id="clrBtn">✕</button>
+      </div>
+      <select id="filterCat" style="min-width:120px;max-width:170px;"></select>
+      <select id="sortSel" style="min-width:120px;max-width:170px;">
+        <option value="newest">Neueste zuerst</option>
+        <option value="oldest">Älteste zuerst</option>
+        <option value="az">A – Z</option>
+        <option value="za">Z – A</option>
+        <option value="category">Nach Kategorie</option>
+      </select>
+    </div>
+    <div class="statsbar">
+      <div class="stat"><strong id="tot">0</strong> SREFs</div>
+      <div class="sep"></div>
+      <div class="stat"><strong id="cats">0</strong> Kategorien</div>
+      <div class="sep"></div>
+      <div class="stat"><strong id="fil">0</strong> Treffer</div>
+    </div>
+    <div class="cards-area"><div class="cards" id="cards"></div></div>
+  </main>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
+  onSnapshot, query, orderBy, serverTimestamp, writeBatch, getDocs
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const app = initializeApp({
+  apiKey:"AIzaSyBfGFZ8Ukb0MqbULPXwu_fx_JBuSH6rr_M",
+  authDomain:"sref-ccbcb.firebaseapp.com",
+  projectId:"sref-ccbcb",
+  storageBucket:"sref-ccbcb.firebasestorage.app",
+  messagingSenderId:"856389554304",
+  appId:"1:856389554304:web:fab4bfe11db483b0df1665"
+});
+const db = getFirestore(app);
+const eRef = collection(db,'entries');
+const cRef = collection(db,'categories');
+
+const PALETTE = [
+  '#2563eb','#7c3aed','#db2777','#059669',
+  '#d97706','#dc2626','#0891b2','#65a30d',
+  '#9333ea','#0d9488','#b45309','#be123c'
+];
+let cmap = {}, cidx = 0;
+function clr(n) { if(!cmap[n]){cmap[n]=PALETTE[cidx++%PALETTE.length];} return cmap[n]; }
+function rgba(h,a) { const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16); return `rgba(${r},${g},${b},${a})`; }
+
+let entries=[],categories=['Allgemein'],editId=null;
+const $=id=>document.getElementById(id);
+const E={
+  name:$('name'),sref:$('sref'),notes:$('notes'),cat:$('category'),
+  newCat:$('newCat'),addCatBtn:$('addCatBtn'),catTags:$('catTags'),
+  saveBtn:$('saveBtn'),cancelBtn:$('cancelBtn'),
+  si:$('searchInput'),sw:$('sw'),clrBtn:$('clrBtn'),
+  fc:$('filterCat'),ss:$('sortSel'),cards:$('cards'),
+  tot:$('tot'),cats:$('cats'),fil:$('fil'),
+  exportBtn:$('exportBtn'),importInput:$('importInput'),resetBtn:$('resetBtn'),
+  notice:$('notice'),dot:$('dot'),stxt:$('stxt'),loader:$('loader'),themeWrap:$('themeWrap')
+};
+
+// theme
+E.themeWrap.addEventListener('click',()=>{
+  const h=document.documentElement;
+  h.dataset.theme=h.dataset.theme==='dark'?'light':'dark';
+  localStorage.setItem('theme',h.dataset.theme);
+});
+const th=localStorage.getItem('theme'); if(th) document.documentElement.dataset.theme=th;
+
+function setS(t,txt){E.dot.className=`dot ${t}`;E.stxt.textContent=txt;}
+
+onSnapshot(query(eRef,orderBy('createdAt','desc')),snap=>{
+  entries=snap.docs.map(d=>({id:d.id,...d.data(),createdAt:d.data().createdAt?.toMillis?.()??Date.now()}));
+  render(); setS('','Synchronisiert'); E.loader.classList.add('gone');
+},err=>{console.error(err);setS('error','Fehler');E.loader.classList.add('gone');});
+
+onSnapshot(query(cRef,orderBy('name')),snap=>{
+  if(snap.empty){addDoc(cRef,{name:'Allgemein'});return;}
+  categories=snap.docs.map(d=>d.data().name);
+  renderSel(); renderTags();
+},err=>console.error(err));
+
+function esc(v){return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
+function norm(v){const c=v.trim();if(!c)return'';return c.startsWith('--sref')?c:`--sref ${c}`;}
+function note(m){E.notice.textContent=m;E.notice.style.display='block';clearTimeout(note._t);note._t=setTimeout(()=>E.notice.style.display='none',2800);}
+function reset(){editId=null;E.name.value='';E.sref.value='';E.notes.value='';E.cat.value=categories[0]??'Allgemein';E.saveBtn.textContent='SREF speichern';E.cancelBtn.style.display='none';}
+function getF(){
+  const q=E.si.value.trim().toLowerCase(),fc=E.fc.value,s=E.ss.value;
+  let a=[...entries];
+  if(q)a=a.filter(e=>[e.name,e.sref,e.category,e.notes||''].join(' ').toLowerCase().includes(q));
+  if(fc)a=a.filter(e=>e.category===fc);
+  a.sort((a,b)=>{
+    if(s==='oldest')return a.createdAt-b.createdAt;
+    if(s==='az')return a.name.localeCompare(b.name,'de');
+    if(s==='za')return b.name.localeCompare(a.name,'de');
+    if(s==='category'){const c=a.category.localeCompare(b.category,'de');return c||a.name.localeCompare(b.name,'de');}
+    return b.createdAt-a.createdAt;
+  });
+  return a;
+}
+
+function renderSel(){
+  const o=categories.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  E.cat.innerHTML=o; E.fc.innerHTML=`<option value="">Alle Kategorien</option>${o}`;
+  E.cats.textContent=categories.length;
+}
+function renderTags(){
+  E.catTags.innerHTML=categories.map(c=>{
+    const col=clr(c);
+    return `<span class="cat-tag" style="background:${rgba(col,.1)};border-color:${rgba(col,.25)};color:${col}">${esc(c)}${c==='Allgemein'?'':`<button class="rm" data-rm="${esc(c)}">✕</button>`}</span>`;
+  }).join('');
+}
+function render(){
+  const items=getF();
+  E.tot.textContent=entries.length; E.fil.textContent=items.length;
+  if(!items.length){
+    E.cards.innerHTML=`<div class="empty"><div class="empty-icon">◈</div><h3>${entries.length===0?'Noch leer.':'Keine Treffer.'}</h3><p>${entries.length===0?'Lege links deinen ersten SREF an.':'Filter oder Suche anpassen.'}</p></div>`;
+    return;
+  }
+  E.cards.innerHTML=items.map(e=>{
+    const col=clr(e.category);
+    const date=new Date(e.createdAt).toLocaleDateString('de-DE');
+    return `<article class="card" style="--cc:${col}">
+      <div class="c-head">
+        <div><div class="c-name">${esc(e.name)}</div><div class="c-date">${date}</div></div>
+        <span class="c-badge" style="background:${rgba(col,.1)};border-color:${rgba(col,.25)};color:${col}">${esc(e.category)}</span>
+      </div>
+      <div class="c-code">${esc(e.sref)}</div>
+      ${e.notes?`<div class="c-notes">${esc(e.notes)}</div>`:''}
+      <div class="c-actions">
+        <button class="btn" data-copy="${esc(e.sref)}">Kopieren</button>
+        <button class="btn" data-edit="${e.id}">Bearbeiten</button>
+        <button class="btn btn-danger" data-del="${e.id}">Löschen</button>
+      </div>
+    </article>`;
+  }).join('');
+}
+
+async function addCat(){
+  const n=E.newCat.value.trim();if(!n)return;
+  if(categories.some(c=>c.toLowerCase()===n.toLowerCase())){note('Existiert bereits.');return;}
+  setS('syncing','Speichert…');await addDoc(cRef,{name:n});E.newCat.value='';note('Kategorie hinzugefügt.');
+}
+async function save(){
+  const name=E.name.value.trim(),sref=norm(E.sref.value),cat=E.cat.value,notes=E.notes.value.trim();
+  if(!name||!sref){note('Name und SREF-Code erforderlich.');return;}
+  setS('syncing','Speichert…');
+  if(editId){await updateDoc(doc(db,'entries',editId),{name,sref,category:cat,notes});note('Aktualisiert.');}
+  else{await addDoc(eRef,{name,sref,category:cat,notes,createdAt:serverTimestamp()});note('Gespeichert.');}
+  reset();
+}
+function editE(id){
+  const e=entries.find(x=>x.id===id);if(!e)return;
+  editId=id;E.name.value=e.name;E.sref.value=e.sref;E.notes.value=e.notes||'';E.cat.value=e.category;
+  E.saveBtn.textContent='Änderungen speichern';E.cancelBtn.style.display='';
+  E.name.focus();window.scrollTo({top:0,behavior:'smooth'});
+}
+async function delE(id){
+  if(!confirm('Eintrag löschen?'))return;
+  setS('syncing','Löscht…');await deleteDoc(doc(db,'entries',id));note('Gelöscht.');
+}
+async function rmCat(name){
+  const n=entries.filter(e=>e.category===name).length;
+  if(n&&!confirm(`"${name}" hat ${n} Einträge → werden auf Allgemein gesetzt. Fortfahren?`))return;
+  setS('syncing','Speichert…');
+  const b=writeBatch(db);
+  entries.filter(e=>e.category===name).forEach(e=>b.update(doc(db,'entries',e.id),{category:'Allgemein'}));
+  (await getDocs(cRef)).forEach(d=>{if(d.data().name===name)b.delete(d.ref);});
+  await b.commit();delete cmap[name];note('Kategorie gelöscht.');
+}
+async function copy(t){try{await navigator.clipboard.writeText(t);note('SREF kopiert!');}catch{note('Kopieren nicht möglich.');}}
+function doExport(){
+  const b=new Blob([JSON.stringify({categories,entries},null,2)],{type:'application/json'});
+  Object.assign(document.createElement('a'),{href:URL.createObjectURL(b),download:'sref-export.json'}).click();
+}
+async function doImport(file){
+  try{
+    const p=JSON.parse(await file.text());
+    const cs=Array.isArray(p.categories)?p.categories:['Allgemein'];
+    const es=Array.isArray(p.entries)?p.entries:[];
+    if(!cs.includes('Allgemein'))cs.unshift('Allgemein');
+    setS('syncing','Importiert…');
+    const b=writeBatch(db);
+    for(const n of cs)if(!categories.includes(n))b.set(doc(cRef),{name:n});
+    for(const e of es)b.set(doc(eRef),{name:e.name||'?',sref:e.sref||'',category:e.category||'Allgemein',notes:e.notes||'',createdAt:serverTimestamp()});
+    await b.commit();note('Import ok.');
+  }catch{note('Import fehlgeschlagen.');}
+}
+async function doReset(){
+  if(!confirm('Alle Daten löschen?'))return;
+  setS('syncing','Löscht…');
+  const b=writeBatch(db);
+  (await getDocs(eRef)).forEach(d=>b.delete(d.ref));
+  (await getDocs(cRef)).forEach(d=>{if(d.data().name!=='Allgemein')b.delete(d.ref);});
+  await b.commit();cmap={};cidx=0;note('Gelöscht.');
+}
+
+E.addCatBtn.addEventListener('click',addCat);
+E.newCat.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addCat();}});
+E.saveBtn.addEventListener('click',save);
+E.cancelBtn.addEventListener('click',reset);
+E.exportBtn.addEventListener('click',doExport);
+E.resetBtn.addEventListener('click',doReset);
+E.importInput.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)doImport(f);e.target.value='';});
+E.si.addEventListener('input',()=>{E.sw.classList.toggle('hv',!!E.si.value);render();});
+E.clrBtn.addEventListener('click',()=>{E.si.value='';E.sw.classList.remove('hv');render();});
+E.fc.addEventListener('change',render);
+E.ss.addEventListener('change',render);
+E.catTags.addEventListener('click',e=>{const b=e.target.closest('[data-rm]');if(b)rmCat(b.dataset.rm);});
+E.cards.addEventListener('click',e=>{
+  const cp=e.target.closest('[data-copy]');
+  const ed=e.target.closest('[data-edit]');
+  const dl=e.target.closest('[data-del]');
+  if(cp)copy(cp.dataset.copy);
+  else if(ed)editE(ed.dataset.edit);
+  else if(dl)delE(dl.dataset.del);
+});
+</script>
+</body>
+</html>
